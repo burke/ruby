@@ -5727,6 +5727,40 @@ rb_find_file_ext(VALUE *filep, const char *const *ext)
     return rb_find_file_ext_safe(filep, ext, rb_safe_level());
 }
 
+static int
+rb_find_file_shortcut2(VALUE * filep, const char *const *ext)
+{
+    VALUE zz = rb_gv_get("$zz");
+    if (NIL_P(zz)) {
+	return -1;
+    }
+
+    VALUE fname;
+    long j, fnlen;
+
+    for (j=0; ext[j]; j++) {
+	fname = rb_str_dup(*filep);
+	fnlen = RSTRING_LEN(fname);
+	rb_str_cat2(fname, ext[j]);
+	VALUE asdf = rb_funcall(zz, rb_intern("[]"), 1, fname);
+	if (!NIL_P(asdf)) {
+	    *filep = copy_path_class(asdf, *filep);
+	    return (int)(j+1);
+	}
+    }
+    return 0;
+}
+
+static VALUE
+rb_find_file_shortcut(VALUE path)
+{
+    VALUE zz = rb_gv_get("$zz");
+    if (NIL_P(zz)) {
+	return Qnil;
+    }
+    return rb_funcall(zz, rb_intern("[]"), 1, path);
+}
+
 int
 rb_find_file_ext_safe(VALUE *filep, const char *const *ext, int safe_level)
 {
@@ -5761,6 +5795,16 @@ rb_find_file_ext_safe(VALUE *filep, const char *const *ext, int safe_level)
 	    }
 	    rb_str_set_len(fname, fnlen);
 	}
+	return 0;
+    }
+
+    int ret = rb_find_file_shortcut2(filep, ext);
+    if (ret == -1) {
+    } else if (ret > 0) {
+	// printf("\x1b[32mS.ext %s\x1b[0m\n", RSTRING_PTR(fname));
+	return ret;
+    } else {
+	// printf("F.ext %s\n", RSTRING_PTR(fname));
 	return 0;
     }
 
@@ -5830,10 +5874,19 @@ rb_find_file_safe(VALUE path, int safe_level)
     if (load_path) {
 	long i;
 
+	VALUE str = rb_find_file_shortcut(path);
+	if (!NIL_P(str)) {
+	    // printf("S %s\n", RSTRING_PTR(str));
+	    tmp = str;
+	    goto found;
+	} else {
+	    // printf("F %s\n", RSTRING_PTR(path));
+	}
+
 	tmp = rb_str_tmp_new(MAXPATHLEN + 2);
 	rb_enc_associate_index(tmp, rb_usascii_encindex());
 	for (i = 0; i < RARRAY_LEN(load_path); i++) {
-	    VALUE str = RARRAY_AREF(load_path, i);
+	    str = RARRAY_AREF(load_path, i);
 	    RB_GC_GUARD(str) = rb_get_path_check(str, safe_level);
 	    if (RSTRING_LEN(str) > 0) {
 		rb_file_expand_path_internal(path, str, 0, 0, tmp);
