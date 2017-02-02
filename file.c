@@ -28,6 +28,7 @@
 #include "ruby/util.h"
 #include "dln.h"
 #include "encindex.h"
+#include "vm_core.h"
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -5764,6 +5765,9 @@ rb_find_file_ext_safe(VALUE *filep, const char *const *ext, int safe_level)
 	return 0;
     }
 
+    rb_thread_t *th = GET_THREAD();
+    EXEC_EVENT_HOOK(th, RUBY_EVENT_UNRESOLVED_LOAD, *filep, 0, 0, Qnil);
+
     RB_GC_GUARD(load_path) = rb_get_expanded_load_path();
     if (!load_path) return 0;
 
@@ -5825,6 +5829,9 @@ rb_find_file_safe(VALUE path, int safe_level)
 	    path = copy_path_class(file_expand_path_1(path), path);
 	return path;
     }
+
+    rb_thread_t *th = GET_THREAD();
+    EXEC_EVENT_HOOK(th, RUBY_EVENT_UNRESOLVED_LOAD, path, 0, 0, Qnil);
 
     RB_GC_GUARD(load_path) = rb_get_expanded_load_path();
     if (load_path) {
