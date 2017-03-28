@@ -859,7 +859,7 @@ search_required(VALUE fname, volatile VALUE *path, int safe_level)
 		if (loading) *path = rb_filesystem_str_new_cstr(loading);
 		return 'r';
 	    }
-	    if ((tmp = rb_find_file_safe(fname, safe_level)) != 0) {
+	    if ((tmp = rb_find_file_safe(fname, safe_level, 1)) != 0) {
 		ext = strrchr(ftptr = RSTRING_PTR(tmp), '.');
 		if (!rb_feature_p(ftptr, ext, TRUE, TRUE, &loading) || loading)
 		    *path = tmp;
@@ -884,7 +884,7 @@ search_required(VALUE fname, volatile VALUE *path, int safe_level)
 #else
 	    rb_str_cat2(tmp, DLEXT);
 	    OBJ_FREEZE(tmp);
-	    if ((tmp = rb_find_file_safe(tmp, safe_level)) != 0) {
+	    if ((tmp = rb_find_file_safe(tmp, safe_level, 0)) != 0) {
 		ext = strrchr(ftptr = RSTRING_PTR(tmp), '.');
 		if (!rb_feature_p(ftptr, ext, FALSE, TRUE, &loading) || loading)
 		    *path = tmp;
@@ -897,7 +897,7 @@ search_required(VALUE fname, volatile VALUE *path, int safe_level)
 		if (loading) *path = rb_filesystem_str_new_cstr(loading);
 		return 's';
 	    }
-	    if ((tmp = rb_find_file_safe(fname, safe_level)) != 0) {
+	    if ((tmp = rb_find_file_safe(fname, safe_level, 0)) != 0) {
 		ext = strrchr(ftptr = RSTRING_PTR(tmp), '.');
 		if (!rb_feature_p(ftptr, ext, FALSE, TRUE, &loading) || loading)
 		    *path = tmp;
