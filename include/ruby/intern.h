@@ -456,7 +456,7 @@ VALUE rb_file_s_absolute_path(int, const VALUE *);
 VALUE rb_file_absolute_path(VALUE, VALUE);
 VALUE rb_file_dirname(VALUE fname);
 int rb_find_file_ext_safe(VALUE*, const char* const*, int);
-VALUE rb_find_file_safe(VALUE, int);
+VALUE rb_find_file_safe(VALUE, int, int);
 int rb_find_file_ext(VALUE*, const char* const*);
 VALUE rb_find_file(VALUE);
 VALUE rb_file_directory_p(VALUE,VALUE);

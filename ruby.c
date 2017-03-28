@@ -1883,18 +1883,18 @@ load_file_internal(VALUE argp_v)
 }
 
 static VALUE
-open_load_file(VALUE fname_v, int *xflag)
+open_load_file(VALUE fname_v, int *xflag, int script)
 {
     const char *fname = StringValueCStr(fname_v);
     long flen = RSTRING_LEN(fname_v);
     VALUE f;
-    int e;
+    int e = 0;
+    int fd = 0;
 
     if (flen == 1 && fname[0] == '-') {
 	f = rb_stdin;
     }
     else {
-	int fd;
 	/* open(2) may block if fname is point to FIFO and it's empty. Let's
 	   use O_NONBLOCK. */
 #if defined O_NONBLOCK && HAVE_FCNTL && !(O_NONBLOCK & O_ACCMODE)
@@ -1920,12 +1920,12 @@ open_load_file(VALUE fname_v, int *xflag)
 #endif
 
 	if ((fd = rb_cloexec_open(fname, mode, 0)) < 0) {
-	    int e = errno;
+	    e = errno;
 	    if (!rb_gc_for_fd(e)) {
-		rb_load_fail(fname_v, strerror(e));
+		goto fail;
 	    }
 	    if ((fd = rb_cloexec_open(fname, mode, 0)) < 0) {
-		rb_load_fail(fname_v, strerror(errno));
+		goto fail;
 	    }
 	}
 	rb_update_max_fd(fd);
@@ -1934,17 +1934,39 @@ open_load_file(VALUE fname_v, int *xflag)
 	/* disabling O_NONBLOCK */
 	if (fcntl(fd, F_SETFL, 0) < 0) {
 	    e = errno;
-	    (void)close(fd);
-	    rb_load_fail(fname_v, strerror(e));
+	    goto fail;
 	}
 #endif
 
-	e = ruby_is_fd_loadable(fd);
-	if (!e) {
-	    e = errno;
-	    (void)close(fd);
-	    rb_load_fail(fname_v, strerror(e));
+#ifdef S_ISFIFO
+	{
+	    struct stat st;
+	    if (fstat(fd, &st) != 0) {
+		e = errno;
+		goto fail;
+	    }
+	    if (S_ISFIFO(st.st_mode)) {
+		/*
+		  We need to wait if FIFO is empty. It's FIFO's semantics.
+		  rb_thread_wait_fd() release GVL. So, it's safe.
+		*/
+		rb_thread_wait_fd(fd);
+	    } else if (S_ISDIR(st.st_mode)) {
+		e = EISDIR;
+		goto fail;
+	    } else if (!S_ISREG(st.st_mode)) {
+		e = ENXIO;
+		goto fail;
+	    }
 	}
+#else
+	/* Note that we've replicated ruby_is_fd_loadable in S_ISFIFO without
+	 * calling fstat64 twice. */
+	if (!ruby_is_fd_loadable(fd)) {
+	    e = errno;
+	    goto fail;
+	}
+#endif
 
 	f = rb_io_fdopen(fd, mode, fname);
 	if (e < 0) {
@@ -1956,6 +1978,16 @@ open_load_file(VALUE fname_v, int *xflag)
 	}
     }
     return f;
+fail:
+    if (fd > 0) (void)close(fd);
+    if (script) {
+	/* when we reach this from `$ ruby bad.rb`, show the reason */
+	rb_load_fail(fname_v, strerror(e));
+    } else {
+	/* when called from require/load/etc., just show:
+	 * "cannot load such file", same as `load_failed`. */
+	rb_load_fail(fname_v, "cannot load such file");
+    }
 }
 
 static VALUE
@@ -1979,7 +2011,7 @@ load_file(VALUE parser, VALUE fname, int script, ruby_cmdline_options_t *opt)
     arg.script = script;
     arg.opt = opt;
     arg.xflag = 0;
-    arg.f = open_load_file(rb_str_encode_ospath(fname), &arg.xflag);
+    arg.f = open_load_file(rb_str_encode_ospath(fname), &arg.xflag, script);
     return (NODE *)rb_ensure(load_file_internal, (VALUE)&arg,
 			     restore_load_file, (VALUE)&arg);
 }

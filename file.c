@@ -5826,11 +5826,11 @@ rb_find_file_ext_safe(VALUE *filep, const char *const *ext, int safe_level)
 VALUE
 rb_find_file(VALUE path)
 {
-    return rb_find_file_safe(path, rb_safe_level());
+    return rb_find_file_safe(path, rb_safe_level(), 0);
 }
 
 VALUE
-rb_find_file_safe(VALUE path, int safe_level)
+rb_find_file_safe(VALUE path, int safe_level, int defer_load_check)
 {
     VALUE tmp, load_path;
     const char *f = StringValueCStr(path);
@@ -5850,7 +5850,9 @@ rb_find_file_safe(VALUE path, int safe_level)
 	if (safe_level >= 1 && !fpath_check(path)) {
 	    rb_raise(rb_eSecurityError, "loading from unsafe path %s", f);
 	}
-	if (!rb_file_load_ok(f)) return 0;
+	if (!defer_load_check && !rb_file_load_ok(f)) {
+	    return 0;
+	}
 	if (!expanded)
 	    path = copy_path_class(file_expand_path_1(path), path);
 	return path;
