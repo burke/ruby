@@ -1762,17 +1762,17 @@ load_file_internal(VALUE argp_v)
 }
 
 static VALUE
-open_load_file(VALUE fname_v, int *xflag)
+open_load_file(VALUE fname_v, int *xflag, int script)
 {
     const char *fname = StringValueCStr(fname_v);
     VALUE f;
-    int e;
+    int e = 0;
+    int fd = 0;
 
     if (RSTRING_LEN(fname_v) == 1 && fname[0] == '-') {
 	f = rb_stdin;
     }
     else {
-	int fd;
 	/* open(2) may block if fname is point to FIFO and it's empty. Let's
 	   use O_NONBLOCK. */
 #if defined O_NONBLOCK && HAVE_FCNTL && !(O_NONBLOCK & O_ACCMODE)
@@ -1795,7 +1795,8 @@ open_load_file(VALUE fname_v, int *xflag)
 #endif
 
 	if ((fd = rb_cloexec_open(fname, mode, 0)) < 0) {
-	    rb_load_fail(fname_v, strerror(errno));
+	    e = errno;
+	    goto fail;
 	}
 	rb_update_max_fd(fd);
 
@@ -1803,8 +1804,7 @@ open_load_file(VALUE fname_v, int *xflag)
 	/* disabling O_NONBLOCK */
 	if (fcntl(fd, F_SETFL, 0) < 0) {
 	    e = errno;
-	    (void)close(fd);
-	    rb_load_fail(fname_v, strerror(e));
+	    goto fail;
 	}
 #endif
 
@@ -1813,8 +1813,7 @@ open_load_file(VALUE fname_v, int *xflag)
 	    struct stat st;
 	    if (fstat(fd, &st) != 0) {
 		e = errno;
-		(void)close(fd);
-		rb_load_fail(fname_v, strerror(e));
+		goto fail;
 	    }
 	    if (S_ISFIFO(st.st_mode)) {
 		/*
@@ -1822,18 +1821,36 @@ open_load_file(VALUE fname_v, int *xflag)
 		  rb_thread_wait_fd() release GVL. So, it's safe.
 		*/
 		rb_thread_wait_fd(fd);
+	    } else if (S_ISDIR(st.st_mode)) {
+		e = EISDIR;
+		goto fail;
+	    } else if (!S_ISREG(st.st_mode)) {
+		e = ENXIO;
+		goto fail;
 	    }
 	}
-#endif
+#else
+	/* Note that we've replicated ruby_is_fd_loadable in S_ISFIFO without
+	 * calling fstat64 twice. */
 	if (!ruby_is_fd_loadable(fd)) {
 	    e = errno;
-	    (void)close(fd);
-	    rb_load_fail(fname_v, strerror(e));
+	    goto fail;
 	}
+#endif
 
 	f = rb_io_fdopen(fd, mode, fname);
     }
     return f;
+fail:
+    if (fd > 0) (void)close(fd);
+    if (script) {
+	/* when we reach this from `$ ruby bad.rb`, show the reason */
+	rb_load_fail(fname_v, strerror(e));
+    } else {
+	/* when called from require/load/etc., just show:
+	 * "cannot load such file", same as `load_failed`. */
+	rb_load_fail(fname_v, "cannot load such file");
+    }
 }
 
 static VALUE
@@ -1874,7 +1891,7 @@ load_file(VALUE parser, VALUE fname, int script, struct cmdline_options *opt)
     arg.opt = opt;
     arg.xflag = 0;
     arg.lineno = rb_gv_get("$.");
-    arg.f = open_load_file(rb_str_encode_ospath(fname), &arg.xflag);
+    arg.f = open_load_file(rb_str_encode_ospath(fname), &arg.xflag, script);
     return (NODE *)rb_ensure(load_file_internal, (VALUE)&arg,
 			     restore_load_file, (VALUE)&arg);
 }
