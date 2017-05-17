@@ -1288,6 +1288,7 @@ setinlinecache
 {
     VM_ASSERT(ic->ic_value.value != Qundef);
     ic->ic_value.value = val;
+    EXEC_EVENT_HOOK(GET_THREAD(), RUBY_EVENT_CONSTANT_ACCESS, GET_SELF(), 0, 0, 0, val);
     ic->ic_serial = GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count;
     ic->ic_cref = vm_get_const_key_cref(GET_EP());
     ruby_vm_const_missing_count = 0;
